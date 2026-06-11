@@ -83,7 +83,7 @@ class SummaryPerturbator:
                 replacement = self.swap_words[lower]
                 if word[0].isupper():
                     replacement = replacement.capitalize()
-                result.append(replacement + word[len(lower):].lstrip(lower))
+                result.append(replacement + word[len(lower):])
             else:
                 result.append(word)
         return " ".join(result)
@@ -130,19 +130,20 @@ class ContrastiveFactualityLoss(nn.Module):
         decoder_hidden_states: torch.Tensor,
         labels: Optional[torch.Tensor] = None,
         perturbed_labels: Optional[torch.Tensor] = None,
+        neg_decoder_hidden_states: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
-        pooled = decoder_hidden_states.mean(dim=1)
-        projected = self.projection_head(pooled)
-        projected = F.normalize(projected, dim=-1)
-
-        if perturbed_labels is not None:
-            batch_size = projected.shape[0] // 2
-            pos_repr = projected[:batch_size]
-            neg_repr = projected[batch_size:]
+        if neg_decoder_hidden_states is not None:
+            pos_pooled = decoder_hidden_states.mean(dim=1)
+            neg_pooled = neg_decoder_hidden_states.mean(dim=1)
+            pos_repr = self.projection_head(pos_pooled)
+            neg_repr = self.projection_head(neg_pooled)
+            pos_repr = F.normalize(pos_repr, dim=-1)
+            neg_repr = F.normalize(neg_repr, dim=-1)
 
             sim_matrix = torch.matmul(pos_repr, neg_repr.T) / self.temperature
 
-            labels_contrastive = torch.arange(batch_size, device=projected.device)
+            batch_size = pos_repr.shape[0]
+            labels_contrastive = torch.arange(batch_size, device=pos_repr.device)
             contrastive_loss = F.cross_entropy(sim_matrix, labels_contrastive)
 
             metrics = {

@@ -270,7 +270,6 @@ def load_model_and_tokenizer(model_config_or_name, device=None, checkpoint_dir=N
     if model_config.is_led:
         model = LEDForConditionalGeneration.from_pretrained(
             model_path,
-            torch_dtype=torch.float16 if device.type == "cuda" else torch.float32,
         )
         model.config.max_length = model_config.max_target_length
         n_layers = model.config.num_hidden_layers if hasattr(model.config, 'num_hidden_layers') else 12
@@ -284,7 +283,6 @@ def load_model_and_tokenizer(model_config_or_name, device=None, checkpoint_dir=N
     else:
         model = AutoModelForSeq2SeqLM.from_pretrained(
             model_path,
-            torch_dtype=torch.float16 if device.type == "cuda" else torch.float32,
         )
 
     model = model.to(device)

@@ -10,7 +10,7 @@ from transformers import (
     AutoTokenizer,
     PreTrainedModel,
 )
-from transformers.modeling_outputs import Seq2SeqLMOutput
+from transformers.modeling_outputs import Seq2SeqLMOutput, BaseModelOutput
 
 from models.section_embedding import SectionDetector, SectionAwareEmbedding, NUM_SECTION_TYPES
 from models.faithfulness_gate import FaithfulnessGatedDecoderLayer, FaithfulnessGate
@@ -129,6 +129,7 @@ class LEDFaCTForConditionalGeneration(nn.Module):
         self,
         input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
+        global_attention_mask: Optional[torch.Tensor] = None,
         decoder_input_ids: Optional[torch.LongTensor] = None,
         decoder_attention_mask: Optional[torch.LongTensor] = None,
         encoder_outputs: Optional[Tuple] = None,
@@ -139,9 +140,14 @@ class LEDFaCTForConditionalGeneration(nn.Module):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         section_ids: Optional[torch.LongTensor] = None,
-        perturbed_labels: Optional[torch.LongTensor] = None,
         input_texts: Optional[List[str]] = None,
     ):
+        if global_attention_mask is None and input_ids is not None:
+            global_attention_mask = torch.zeros(
+                input_ids.shape[0], input_ids.shape[1],
+                dtype=torch.long, device=input_ids.device,
+            )
+            global_attention_mask[:, 0] = 1
         if self.use_sae:
             embed_grad_orig = self.led.base_model.encoder.embed_tokens.weight.requires_grad
             self.led.base_model.encoder.embed_tokens.requires_grad_(True)
@@ -173,6 +179,7 @@ class LEDFaCTForConditionalGeneration(nn.Module):
             from transformers.models.led.modeling_led import LEDEncoder
             encoder_out = encoder(
                 attention_mask=attention_mask,
+                global_attention_mask=global_attention_mask,
                 inputs_embeds=input_embeds,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
@@ -182,118 +189,49 @@ class LEDFaCTForConditionalGeneration(nn.Module):
 
             if not embed_grad_orig:
                 self.led.base_model.encoder.embed_tokens.requires_grad_(False)
-        else:
-            encoder_hidden_states = None
-            encoder_out = None
 
-        if self.use_cfl and labels is not None and self.training:
-            outputs = self._forward_with_cfl(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                decoder_input_ids=decoder_input_ids,
-                decoder_attention_mask=decoder_attention_mask,
-                encoder_hidden_states=encoder_hidden_states,
-                labels=labels,
-                perturbed_labels=perturbed_labels,
-                use_cache=use_cache,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-                return_dict=return_dict,
-            )
-        else:
-            if encoder_hidden_states is not None:
-                outputs = self.led(
-                    input_ids=None,
-                    attention_mask=attention_mask,
-                    decoder_input_ids=decoder_input_ids,
-                    decoder_attention_mask=decoder_attention_mask,
-                    encoder_outputs=(encoder_hidden_states,),
-                    labels=labels,
-                    use_cache=use_cache,
-                    output_attentions=output_attentions,
-                    output_hidden_states=output_hidden_states,
-                    return_dict=return_dict,
-                )
-            else:
-                outputs = self.led(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    decoder_input_ids=decoder_input_ids,
-                    decoder_attention_mask=decoder_attention_mask,
-                    labels=labels,
-                    use_cache=use_cache,
-                    output_attentions=output_attentions,
-                    output_hidden_states=output_hidden_states,
-                    return_dict=return_dict,
-                )
-
-        return outputs
-
-    def _forward_with_cfl(
-        self,
-        input_ids,
-        attention_mask,
-        decoder_input_ids,
-        decoder_attention_mask,
-        encoder_hidden_states,
-        labels,
-        perturbed_labels,
-        use_cache,
-        output_attentions,
-        output_hidden_states,
-        return_dict,
-    ):
-        if encoder_hidden_states is not None:
             outputs = self.led(
                 input_ids=None,
                 attention_mask=attention_mask,
+                global_attention_mask=global_attention_mask,
                 decoder_input_ids=decoder_input_ids,
                 decoder_attention_mask=decoder_attention_mask,
                 encoder_outputs=(encoder_hidden_states,),
                 labels=labels,
                 use_cache=use_cache,
                 output_attentions=output_attentions,
-                output_hidden_states=True,
-                return_dict=True,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
             )
         else:
             outputs = self.led(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
+                global_attention_mask=global_attention_mask,
                 decoder_input_ids=decoder_input_ids,
                 decoder_attention_mask=decoder_attention_mask,
                 labels=labels,
                 use_cache=use_cache,
                 output_attentions=output_attentions,
-                output_hidden_states=True,
-                return_dict=True,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
             )
-
-        ce_loss = outputs.loss if outputs.loss is not None else torch.tensor(0.0, device=input_ids.device)
-
-        if outputs.decoder_hidden_states is not None:
-            decoder_hidden = outputs.decoder_hidden_states[-1]
-            cfl_loss, cfl_metrics = self.cfl_loss(
-                decoder_hidden_states=decoder_hidden,
-                labels=labels,
-                perturbed_labels=perturbed_labels,
-            )
-
-            total_loss = ce_loss + self.cfl_alpha * cfl_loss
-
-            outputs.loss = total_loss
-            if hasattr(outputs, '__dict__'):
-                outputs.__dict__['cfl_loss'] = cfl_loss.item()
-                outputs.__dict__['ce_loss'] = ce_loss.item()
-                outputs.__dict__['total_loss'] = total_loss.item()
-                for k, v in cfl_metrics.items():
-                    outputs.__dict__[f'cfl_{k}'] = v
 
         return outputs
 
     def generate(self, input_ids, attention_mask=None, section_ids=None, input_texts=None, **generate_kwargs):
         was_training = self.training
         self.eval()
+
+        global_attention_mask = generate_kwargs.pop("global_attention_mask", None)
+        if global_attention_mask is None and input_ids is not None:
+            global_attention_mask = torch.zeros(
+                input_ids.shape[0], input_ids.shape[1],
+                dtype=torch.long, device=input_ids.device,
+            )
+            global_attention_mask[:, 0] = 1
+
+        generate_kwargs["use_cache"] = False
 
         if self.use_sae:
             embed_grad_orig = self.led.base_model.encoder.embed_tokens.weight.requires_grad
@@ -325,6 +263,7 @@ class LEDFaCTForConditionalGeneration(nn.Module):
             encoder = self.led.base_model.encoder
             encoder_out = encoder(
                 attention_mask=attention_mask,
+                global_attention_mask=global_attention_mask,
                 inputs_embeds=input_embeds,
                 return_dict=True,
             )
@@ -333,16 +272,19 @@ class LEDFaCTForConditionalGeneration(nn.Module):
             if not embed_grad_orig:
                 self.led.base_model.encoder.embed_tokens.requires_grad_(False)
 
+            encoder_outputs_obj = BaseModelOutput(last_hidden_state=encoder_hidden_states)
             outputs = self.led.generate(
                 input_ids=None,
                 attention_mask=attention_mask,
-                encoder_outputs=(encoder_hidden_states,),
+                global_attention_mask=global_attention_mask,
+                encoder_outputs=encoder_outputs_obj,
                 **generate_kwargs,
             )
         else:
             outputs = self.led.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
+                global_attention_mask=global_attention_mask,
                 **generate_kwargs,
             )
 
@@ -372,9 +314,28 @@ class LEDFaCTForConditionalGeneration(nn.Module):
         with open(os.path.join(save_directory, "led_fact_config.json"), "w") as f:
             json.dump(config_dict, f, indent=2)
 
+        if self.use_fgca:
+            original_layers = {}
+            for i, layer in enumerate(self.led.base_model.decoder.layers):
+                if isinstance(layer, FaithfulnessGatedDecoderLayer):
+                    original_layers[i] = layer.original_layer
+                    self.led.base_model.decoder.layers[i] = layer.original_layer
+
         led_path = os.path.join(save_directory, "led_base")
         self.led.save_pretrained(led_path)
         self.tokenizer.save_pretrained(led_path)
+
+        if self.use_fgca:
+            for i, orig_layer in original_layers.items():
+                gated_layer = FaithfulnessGatedDecoderLayer(
+                    original_decoder_layer=orig_layer,
+                    hidden_size=self.led.config.d_model,
+                    gate_hidden_dim=self.config.fgca_hidden_dim,
+                    dropout=self.config.dropout,
+                )
+                fgca_gate_state = self.led.base_model.decoder.layers[i].state_dict()
+                self.led.base_model.decoder.layers[i] = gated_layer
+                self.led.base_model.decoder.layers[i].load_state_dict(fgca_gate_state, strict=False)
 
         if self.use_sae:
             torch.save(self.section_embedding.state_dict(),
@@ -407,27 +368,15 @@ class LEDFaCTForConditionalGeneration(nn.Module):
 
         model_path = os.path.join(load_directory, "led_base")
         if os.path.exists(model_path):
-            model.led = LEDForConditionalGeneration.from_pretrained(model_path)
+            loaded_led = LEDForConditionalGeneration.from_pretrained(model_path)
+            model.led.load_state_dict(loaded_led.state_dict(), strict=False)
+            del loaded_led
             model.tokenizer = AutoTokenizer.from_pretrained(model_path)
 
         if model.use_sae:
             sae_path = os.path.join(load_directory, "section_embedding.pt")
             if os.path.exists(sae_path):
                 model.section_embedding.load_state_dict(torch.load(sae_path, map_location="cpu"))
-
-        if model.use_fgca:
-            fgca_path = os.path.join(load_directory, "fgca_gates.pt")
-            if os.path.exists(fgca_path):
-                fgca_state = torch.load(fgca_path, map_location="cpu")
-                model._inject_fgca_layers(
-                    model.led.config.d_model,
-                    config.fgca_hidden_dim,
-                    config.dropout,
-                )
-                for i, layer in enumerate(model.led.base_model.decoder.layers):
-                    if isinstance(layer, FaithfulnessGatedDecoderLayer):
-                        if f"layer_{i}" in fgca_state:
-                            layer.faithfulness_gate.load_state_dict(fgca_state[f"layer_{i}"])
 
         if model.use_cfl:
             cfl_path = os.path.join(load_directory, "cfl_loss.pt")

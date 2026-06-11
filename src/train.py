@@ -1,5 +1,6 @@
 import os
 import json
+import gc
 import logging
 from datetime import datetime
 from typing import Optional
@@ -35,20 +36,18 @@ class LEDFaCTTrainer(Seq2SeqTrainer):
         self.use_cfl = use_cfl
         self.cfl_alpha = cfl_alpha
 
-    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-        if self.use_cfl and self.led_fact_model is not None and hasattr(self.led_fact_model, 'cfl_loss'):
-            labels = inputs.get("labels")
-            decoder_input_ids = inputs.get("decoder_input_ids")
-            input_ids = inputs.get("input_ids")
-            attention_mask = inputs.get("attention_mask")
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None, **kwargs):
+        is_led_fact = self.led_fact_model is not None
 
+        if is_led_fact:
             section_ids = inputs.pop("section_ids", None)
             input_texts = inputs.pop("input_texts", None)
+            labels = inputs.get("labels")
 
-            outputs = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                decoder_input_ids=decoder_input_ids,
+            outputs = self.led_fact_model(
+                input_ids=inputs.get("input_ids"),
+                attention_mask=inputs.get("attention_mask"),
+                decoder_input_ids=inputs.get("decoder_input_ids"),
                 labels=labels,
                 section_ids=section_ids,
                 input_texts=input_texts,
@@ -58,60 +57,68 @@ class LEDFaCTTrainer(Seq2SeqTrainer):
 
             ce_loss = outputs.loss
 
-            decoder_hidden = outputs.decoder_hidden_states[-1] if outputs.decoder_hidden_states else None
+            if self.use_cfl and labels is not None:
+                decoder_hidden = outputs.decoder_hidden_states[-1] if outputs.decoder_hidden_states else None
+                if decoder_hidden is not None:
+                    perturbator = self.led_fact_model.cfl_loss.perturbator
+                    tokenizer = self.led_fact_model.tokenizer
+                    valid_mask = labels != -100
+                    if valid_mask.any():
+                        valid_labels = labels.clone()
+                        valid_labels[valid_labels == -100] = tokenizer.pad_token_id
 
-            if decoder_hidden is not None and labels is not None:
-                perturbator = self.led_fact_model.cfl_loss.perturbator
-                tokenizer = self.led_fact_model.tokenizer
-                valid_mask = labels != -100
-                if valid_mask.any():
-                    valid_labels = labels.clone()
-                    valid_labels[valid_labels == -100] = self.led_fact_model.tokenizer.pad_token_id
+                        decoded_texts = tokenizer.batch_decode(valid_labels, skip_special_tokens=True)
+                        perturbed_texts = perturbator.perturb_batch(decoded_texts, strategy="mixed")
+                        perturbed_labels = tokenizer(
+                            perturbed_texts,
+                            max_length=valid_labels.shape[1],
+                            truncation=True,
+                            padding="max_length",
+                            return_tensors="pt",
+                        )["input_ids"].to(labels.device)
 
-                    decoded_texts = tokenizer.batch_decode(valid_labels, skip_special_tokens=True)
-                    perturbed_texts = perturbator.perturb_batch(decoded_texts, strategy="mixed")
-                    perturbed_labels = tokenizer(
-                        perturbed_texts,
-                        max_length=valid_labels.shape[1],
-                        truncation=True,
-                        padding="max_length",
-                        return_tensors="pt",
-                    )["input_ids"].to(labels.device)
+                        perturbed_decoder_input_ids = self.led_fact_model.led.prepare_decoder_input_ids_from_labels(perturbed_labels)
 
-                    perturbed_decoder_input_ids = self.led_fact_model.led.prepare_decoder_input_ids_from_labels(perturbed_labels)
+                        with torch.no_grad():
+                            neg_outputs = self.led_fact_model(
+                                input_ids=inputs.get("input_ids"),
+                                attention_mask=inputs.get("attention_mask"),
+                                decoder_input_ids=perturbed_decoder_input_ids,
+                                section_ids=section_ids,
+                                input_texts=input_texts,
+                                output_hidden_states=True,
+                                return_dict=True,
+                            )
+                        neg_decoder_hidden = neg_outputs.decoder_hidden_states[-1].detach() if neg_outputs.decoder_hidden_states else decoder_hidden.detach()
+                        del neg_outputs, perturbed_decoder_input_ids, perturbed_labels
+                        gc.collect()
+                        torch.cuda.empty_cache()
 
-                    with torch.no_grad():
-                        neg_outputs = model(
-                            input_ids=input_ids,
-                            attention_mask=attention_mask,
-                            decoder_input_ids=perturbed_decoder_input_ids,
-                            section_ids=section_ids,
-                            input_texts=input_texts,
-                            output_hidden_states=True,
-                            return_dict=True,
+                        cfl_loss, cfl_metrics = self.led_fact_model.cfl_loss(
+                            decoder_hidden_states=decoder_hidden,
+                            labels=labels,
+                            neg_decoder_hidden_states=neg_decoder_hidden,
                         )
-                    neg_decoder_hidden = neg_outputs.decoder_hidden_states[-1] if neg_outputs.decoder_hidden_states else decoder_hidden.detach()
 
-                    combined_hidden = torch.cat([decoder_hidden, neg_decoder_hidden], dim=0)
-                    cfl_loss, cfl_metrics = self.led_fact_model.cfl_loss(
-                        decoder_hidden_states=combined_hidden,
-                        labels=labels,
-                        perturbed_labels=perturbed_labels,
-                    )
+                        total_loss = ce_loss + self.cfl_alpha * cfl_loss
 
-                    total_loss = ce_loss + self.cfl_alpha * cfl_loss
+                        del neg_decoder_hidden
+                        gc.collect()
+                        torch.cuda.empty_cache()
 
-                    self.log({
-                        "ce_loss": ce_loss.item(),
-                        "cfl_loss": cfl_loss.item(),
-                        "total_loss": total_loss.item(),
-                    })
+                        self.log({
+                            "ce_loss": ce_loss.item(),
+                            "cfl_loss": cfl_loss.item(),
+                            "total_loss": total_loss.item(),
+                        })
 
-                    return (total_loss, outputs) if return_outputs else total_loss
+                        return (total_loss, outputs) if return_outputs else total_loss
 
             return (ce_loss, outputs) if return_outputs else ce_loss
 
-        return super().compute_loss(model, inputs, return_outputs=return_outputs, **kwargs)
+        inputs.pop("section_ids", None)
+        inputs.pop("input_texts", None)
+        return super().compute_loss(model, inputs, return_outputs=return_outputs, num_items_in_batch=num_items_in_batch, **kwargs)
 
 
 def load_model_and_tokenizer(model_config: ModelConfig, device=None):
@@ -125,7 +132,6 @@ def load_model_and_tokenizer(model_config: ModelConfig, device=None):
     if model_config.is_led:
         model = LEDForConditionalGeneration.from_pretrained(
             model_config.hf_path,
-            torch_dtype=torch.float16 if device.type == "cuda" else torch.float32,
         )
         tokenizer.model_max_length = model_config.max_input_length
 
@@ -142,7 +148,6 @@ def load_model_and_tokenizer(model_config: ModelConfig, device=None):
     else:
         model = AutoModelForSeq2SeqLM.from_pretrained(
             model_config.hf_path,
-            torch_dtype=torch.float16 if device.type == "cuda" else torch.float32,
         )
 
     model = model.to(device)
@@ -273,7 +278,7 @@ def train_model(
     )
 
     trainer_kwargs = dict(
-        model=model.led if is_led_fact and hasattr(model, 'led') else model,
+        model=model,
         args=training_args,
         train_dataset=dataset["train"],
         eval_dataset=dataset.get("validation", None),

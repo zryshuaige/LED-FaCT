@@ -32,10 +32,11 @@ input_embedding = word_embed(token_ids) + position_embed(position_ids) + section
 
 ```
 gate = σ(W_g · [cross_attn_output ⊕ self_attn_output] + b_g)
-output = gate ⊙ cross_attn_output + (1 - gate) ⊙ self_attn_output
+gated_output = gate ⊙ cross_attn_output + (1 - gate) ⊙ self_attn_output
+hybrid_output = 0.5 · decoder_output + 0.5 · gated_output
 ```
 
-当门控值接近1时，解码器更依赖源文信息（忠实）；接近0时，允许模型自主生成（灵活性）。
+当门控值接近1时，解码器更依赖源文信息（忠实）；接近0时，允许模型自主生成（灵活性）。最终输出取解码器原始输出与门控输出的等权混合，确保残差连接稳定训练。
 
 ### 模块3: Contrastive Factuality Loss (CFL) — 对比事实性损失
 

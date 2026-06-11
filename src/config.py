@@ -1,5 +1,6 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Optional, List
+import copy
 
 import torch
 
@@ -131,7 +132,7 @@ def get_led_fact_config(model_name: str) -> LEDFaCTConfig:
         "led-baseline": ABLATION_CONFIGS["led_baseline"],
     }
     if model_name in config_map:
-        return config_map[model_name]
+        return copy.deepcopy(config_map[model_name])
     raise ValueError(f"Unknown LED-FaCT config: {model_name}. Available: {list(config_map.keys())}")
 
 

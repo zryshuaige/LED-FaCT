@@ -7,13 +7,29 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import seaborn as sns
 import pandas as pd
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-plt.rcParams["font.sans-serif"] = ["SimHei", "DejaVu Sans"]
+def _setup_chinese_font():
+    chinese_fonts = [
+        "SimHei", "Microsoft YaHei", "STHeiti", "WenQuanYi Micro Hei",
+        "Noto Sans CJK SC", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB",
+        "Source Han Sans SC", "Arial Unicode MS",
+    ]
+    available = {f.name for f in fm.fontManager.ttflist}
+    for font_name in chinese_fonts:
+        if font_name in available:
+            plt.rcParams["font.sans-serif"] = [font_name] + plt.rcParams.get("font.sans-serif", ["DejaVu Sans"])
+            logger.info(f"Using Chinese font: {font_name}")
+            break
+    else:
+        logger.warning("No Chinese font found. Chinese characters may not display correctly in plots.")
+
+_setup_chinese_font()
 plt.rcParams["axes.unicode_minus"] = False
 
 COLORS = ["#2196F3", "#4CAF50", "#FF9800", "#F44336", "#9C27B0", "#00BCD4", "#795548"]

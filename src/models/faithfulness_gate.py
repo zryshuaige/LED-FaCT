@@ -67,11 +67,7 @@ class FaithfulnessGatedDecoderLayer(nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         encoder_attention_mask: Optional[torch.Tensor] = None,
-        layer_head_mask: Optional[torch.Tensor] = None,
-        cross_attn_layer_head_mask: Optional[torch.Tensor] = None,
-        past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        output_attentions: Optional[bool] = False,
-        use_cache: Optional[bool] = True,
+        **kwargs,
     ):
         self_attn_output_before_cross = hidden_states
 
@@ -80,11 +76,7 @@ class FaithfulnessGatedDecoderLayer(nn.Module):
             attention_mask=attention_mask,
             encoder_hidden_states=encoder_hidden_states,
             encoder_attention_mask=encoder_attention_mask,
-            layer_head_mask=layer_head_mask,
-            cross_attn_layer_head_mask=cross_attn_layer_head_mask,
-            past_key_value=past_key_value,
-            output_attentions=output_attentions,
-            use_cache=use_cache,
+            **kwargs,
         )
 
         if isinstance(layer_outputs, tuple):

@@ -16,6 +16,7 @@ from transformers.modeling_outputs import Seq2SeqLMOutput, BaseModelOutput
 from models.section_embedding import SectionDetector, SectionAwareEmbedding, NUM_SECTION_TYPES
 from models.faithfulness_gate import FaithfulnessGatedDecoderLayer, FaithfulnessGate
 from models.contrastive_loss import ContrastiveFactualityLoss, SummaryPerturbator
+from transformers.models.led.modeling_led import LEDEncoder
 
 
 @dataclass
@@ -110,6 +111,27 @@ class LEDFaCTForConditionalGeneration(nn.Module):
 
         self._setup_led_for_long_context()
 
+    @property
+    def generation_config(self):
+        return self.led.generation_config
+
+    @generation_config.setter
+    def generation_config(self, value):
+        self.led.generation_config = value
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
+
+    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+        self.led.gradient_checkpointing_enable(gradient_checkpointing_kwargs)
+
+    def gradient_checkpointing_disable(self):
+        self.led.gradient_checkpointing_disable()
+
+    def is_gradient_checkpointing(self):
+        return getattr(self.led, 'gradient_checkpointing', False)
+
     def _setup_led_for_long_context(self):
         num_layers = self.led.config.num_hidden_layers
         self.led.config.attention_window = [1024] * num_layers
@@ -187,7 +209,6 @@ class LEDFaCTForConditionalGeneration(nn.Module):
             input_embeds = self.section_embedding(input_embeds, section_ids)
 
             encoder = self.led.base_model.encoder
-            from transformers.models.led.modeling_led import LEDEncoder
             encoder_out = encoder(
                 attention_mask=attention_mask,
                 global_attention_mask=global_attention_mask,
@@ -321,33 +342,34 @@ class LEDFaCTForConditionalGeneration(nn.Module):
                 if isinstance(layer, FaithfulnessGatedDecoderLayer):
                     fgca_state[f"layer_{i}"] = layer.faithfulness_gate.state_dict()
             torch.save(fgca_state, os.path.join(save_directory, "fgca_gates.pt"))
-        if self.use_cfl:
-            torch.save(self.cfl_loss.state_dict(),
-                       os.path.join(save_directory, "cfl_loss.pt"))
 
-        if self.use_fgca:
             original_layers = {}
             for i, layer in enumerate(self.led.base_model.decoder.layers):
                 if isinstance(layer, FaithfulnessGatedDecoderLayer):
                     original_layers[i] = layer.original_layer
                     self.led.base_model.decoder.layers[i] = layer.original_layer
 
-        led_path = os.path.join(save_directory, "led_base")
-        self.led.save_pretrained(led_path)
-        self.tokenizer.save_pretrained(led_path)
+        try:
+            led_path = os.path.join(save_directory, "led_base")
+            self.led.save_pretrained(led_path)
+            self.tokenizer.save_pretrained(led_path)
+        finally:
+            if self.use_fgca:
+                for i, orig_layer in original_layers.items():
+                    gated_layer = FaithfulnessGatedDecoderLayer(
+                        original_decoder_layer=orig_layer,
+                        hidden_size=self.led.config.d_model,
+                        gate_hidden_dim=self.config.fgca_hidden_dim,
+                        dropout=self.config.dropout,
+                    )
+                    self.led.base_model.decoder.layers[i] = gated_layer
+                    self.led.base_model.decoder.layers[i].faithfulness_gate.load_state_dict(
+                        fgca_state[f"layer_{i}"]
+                    )
 
-        if self.use_fgca:
-            for i, orig_layer in original_layers.items():
-                gated_layer = FaithfulnessGatedDecoderLayer(
-                    original_decoder_layer=orig_layer,
-                    hidden_size=self.led.config.d_model,
-                    gate_hidden_dim=self.config.fgca_hidden_dim,
-                    dropout=self.config.dropout,
-                )
-                self.led.base_model.decoder.layers[i] = gated_layer
-                self.led.base_model.decoder.layers[i].faithfulness_gate.load_state_dict(
-                    fgca_state[f"layer_{i}"]
-                )
+        if self.use_cfl:
+            torch.save(self.cfl_loss.state_dict(),
+                       os.path.join(save_directory, "cfl_loss.pt"))
 
     @classmethod
     def from_pretrained(cls, load_directory: str, config_override: LEDFaCTConfig = None):
@@ -366,9 +388,21 @@ class LEDFaCTForConditionalGeneration(nn.Module):
         model_path = os.path.join(load_directory, "led_base")
         if os.path.exists(model_path):
             loaded_led = LEDForConditionalGeneration.from_pretrained(model_path)
+
+            if model.use_fgca:
+                fgca_wrapped_layers = {}
+                for i, layer in enumerate(model.led.base_model.decoder.layers):
+                    if isinstance(layer, FaithfulnessGatedDecoderLayer):
+                        fgca_wrapped_layers[i] = layer
+                        model.led.base_model.decoder.layers[i] = layer.original_layer
+
             model.led.load_state_dict(loaded_led.state_dict(), strict=False)
             del loaded_led
             model.tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+            if model.use_fgca:
+                for i, fgca_layer in fgca_wrapped_layers.items():
+                    model.led.base_model.decoder.layers[i] = fgca_layer
 
         if model.use_sae:
             sae_path = os.path.join(load_directory, "section_embedding.pt")

@@ -131,6 +131,7 @@ def run_single_ablation(
         warmup_steps=500,
         weight_decay=0.01,
         fp16=device.type == "cuda",
+        gradient_checkpointing=True,
         logging_steps=100,
         eval_strategy="no",
         save_steps=500,

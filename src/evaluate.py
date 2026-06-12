@@ -18,21 +18,37 @@ logger = logging.getLogger(__name__)
 
 def compute_rouge(predictions: List[str], references: List[str]) -> Dict[str, Dict[str, float]]:
     rouge_scorer_instance = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=True)
-    scores = {"rouge1": [], "rouge2": [], "rougeL": [], "rougeLsum": []}
+    scores_p = {"rouge1": [], "rouge2": [], "rougeL": [], "rougeLsum": []}
+    scores_r = {"rouge1": [], "rouge2": [], "rougeL": [], "rougeLsum": []}
+    scores_f = {"rouge1": [], "rouge2": [], "rougeL": [], "rougeLsum": []}
     for pred, ref in zip(predictions, references):
         if not pred.strip():
-            for key in scores:
-                scores[key].append(0.0)
+            for key in scores_p:
+                scores_p[key].append(0.0)
+                scores_r[key].append(0.0)
+                scores_f[key].append(0.0)
             continue
         score = rouge_scorer_instance.score(ref, pred)
-        scores["rouge1"].append(score["rouge1"].fmeasure)
-        scores["rouge2"].append(score["rouge2"].fmeasure)
-        scores["rougeL"].append(score["rougeL"].fmeasure)
-        scores["rougeLsum"].append(score["rougeLsum"].fmeasure)
+        scores_p["rouge1"].append(score["rouge1"].precision)
+        scores_p["rouge2"].append(score["rouge2"].precision)
+        scores_p["rougeL"].append(score["rougeL"].precision)
+        scores_p["rougeLsum"].append(score["rougeLsum"].precision)
+        scores_r["rouge1"].append(score["rouge1"].recall)
+        scores_r["rouge2"].append(score["rouge2"].recall)
+        scores_r["rougeL"].append(score["rougeL"].recall)
+        scores_r["rougeLsum"].append(score["rougeLsum"].recall)
+        scores_f["rouge1"].append(score["rouge1"].fmeasure)
+        scores_f["rouge2"].append(score["rouge2"].fmeasure)
+        scores_f["rougeL"].append(score["rougeL"].fmeasure)
+        scores_f["rougeLsum"].append(score["rougeLsum"].fmeasure)
 
     return {
-        k: {"precision": float(np.mean(v)), "recall": float(np.mean(v)), "fmeasure": float(np.mean(v))}
-        for k, v in scores.items()
+        k: {
+            "precision": float(np.mean(scores_p[k])),
+            "recall": float(np.mean(scores_r[k])),
+            "fmeasure": float(np.mean(scores_f[k])),
+        }
+        for k in scores_p
     }
 
 

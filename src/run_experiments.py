@@ -1,9 +1,14 @@
+import gc
 import os
 import json
 import logging
 import argparse
 from datetime import datetime
+
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+import torch
 from config import (
     ModelConfig, TrainingConfig, ContextLengthExperiment,
     MODEL_CONFIGS, get_model_config, get_available_models, get_device,
@@ -48,9 +53,11 @@ def run_experiment_1_model_comparison(
 
     for model_name in models:
         logger.info(f"\n--- Training {model_name} ---")
+        model_config = get_model_config(model_name)
+        use_grad_ckpt = model_config.is_led or model_config.is_led_fact
+        batch_size = 1 if (model_config.is_led or model_config.is_led_fact) else 2
+        grad_accum = 8 if (model_config.is_led or model_config.is_led_fact) else 4
         try:
-            model_config = get_model_config(model_name)
-            use_grad_ckpt = model_config.is_led or model_config.is_led_fact
             trainer, model, tokenizer = train_model(
                 model_name=model_name,
                 dataset_name=dataset_name,
@@ -62,10 +69,15 @@ def run_experiment_1_model_comparison(
                     num_train_epochs=3,
                     output_dir=output_dir,
                     gradient_checkpointing=use_grad_ckpt,
+                    per_device_train_batch_size=batch_size,
+                    gradient_accumulation_steps=grad_accum,
                 ),
             )
         except Exception as e:
             logger.error(f"Training failed for {model_name}: {e}")
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             continue
 
         logger.info(f"\n--- Evaluating {model_name} ---")
@@ -82,7 +94,11 @@ def run_experiment_1_model_comparison(
             all_predictions[model_name] = list(zip(summaries, references))
         except Exception as e:
             logger.error(f"Evaluation failed for {model_name}: {e}")
-            continue
+
+        del model, trainer
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     return all_results, all_predictions
 

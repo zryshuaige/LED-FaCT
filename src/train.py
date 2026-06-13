@@ -1,6 +1,9 @@
 import os
 import json
 import gc
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import logging
 from datetime import datetime
 from typing import Optional

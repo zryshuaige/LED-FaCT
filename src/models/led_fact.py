@@ -31,7 +31,7 @@ class LEDFaCTConfig:
     cfl_alpha: float = 0.1
     dropout: float = 0.1
     base_model_name: str = "allenai/led-base-16384"
-    max_input_length: int = 16384
+    max_input_length: int = 8192
     max_target_length: int = 256
 
     @property

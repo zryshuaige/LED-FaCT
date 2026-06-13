@@ -55,11 +55,11 @@ MODEL_CONFIGS = {
     "led-base-16384": ModelConfig(
         name="led-base-16384",
         hf_path="allenai/led-base-16384",
-        max_input_length=16384,
-        max_target_length=256,
-        is_led=True,
-        is_encoder_decoder=True,
-        description="LED (Longformer Encoder-Decoder), 16384-token context window",
+max_input_length=8192,
+    max_target_length=256,
+    is_led=True,
+    is_encoder_decoder=True,
+    description="LED (Longformer Encoder-Decoder), 8192-token context window",
     ),
     "primera": ModelConfig(
         name="primera",
@@ -73,7 +73,7 @@ MODEL_CONFIGS = {
     "led-fact-full": ModelConfig(
         name="led-fact-full",
         hf_path="allenai/led-base-16384",
-        max_input_length=16384,
+        max_input_length=8192,
         max_target_length=256,
         is_led=True,
         is_led_fact=True,
@@ -83,7 +83,7 @@ MODEL_CONFIGS = {
     "led-fact-no-sae": ModelConfig(
         name="led-fact-no-sae",
         hf_path="allenai/led-base-16384",
-        max_input_length=16384,
+        max_input_length=8192,
         max_target_length=256,
         is_led=True,
         is_led_fact=True,
@@ -93,7 +93,7 @@ MODEL_CONFIGS = {
     "led-fact-no-fgca": ModelConfig(
         name="led-fact-no-fgca",
         hf_path="allenai/led-base-16384",
-        max_input_length=16384,
+        max_input_length=8192,
         max_target_length=256,
         is_led=True,
         is_led_fact=True,
@@ -103,7 +103,7 @@ MODEL_CONFIGS = {
     "led-fact-no-cfl": ModelConfig(
         name="led-fact-no-cfl",
         hf_path="allenai/led-base-16384",
-        max_input_length=16384,
+        max_input_length=8192,
         max_target_length=256,
         is_led=True,
         is_led_fact=True,
@@ -113,7 +113,7 @@ MODEL_CONFIGS = {
     "led-baseline": ModelConfig(
         name="led-baseline",
         hf_path="allenai/led-base-16384",
-        max_input_length=16384,
+        max_input_length=8192,
         max_target_length=256,
         is_led=True,
         is_led_fact=False,

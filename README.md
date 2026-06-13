@@ -6,7 +6,7 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YOUR_REPO/blob/main/notebooks/run.ipynb)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.6+-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![Transformers](https://img.shields.io/badge/🤗%20Transformers-4.40+-FFD21E)](https://huggingface.co/docs/transformers)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
@@ -147,10 +147,11 @@ Input: Scientific Paper (4,000–16,000 tokens)
 
 ```bash
 git clone <repo-url> && cd end
-pip install -r requirements.txt
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# or without mirror: pip install -r requirements.txt
 ```
 
-> **Hardware**: Single GPU ≥16 GB VRAM recommended. LED-16384 requires ~16 GB at full context. Reduce `--max_samples` or context length for smaller GPUs.
+> **Hardware**: Single GPU ≥12 GB VRAM recommended (with context length 8192). LED requires ~14 GB at 8192 context (batch_size=1 + gradient_checkpointing). Set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` to reduce memory fragmentation.
 
 ### Smoke Test (30 seconds)
 
@@ -186,8 +187,8 @@ python src/run_experiments.py --mode full --dataset arxiv --max_samples 1000
 |:---|:---:|:---:|:---:|:---|
 | BART-Large-CNN | Encoder-Decoder | 1,024 | 400M | Short-context baseline |
 | PEGASUS-arXiv | Encoder-Decoder | 1,024 | 568M | Domain-specific baseline |
-| LED-Base-16384 | Longformer Enc-Dec | 16,384 | 161M | Long-context baseline |
-| **LED-FaCT (Ours)** | Longformer + SAE + FGCA + CFL | **16,384** | **~170M** | **Faithful long-context** |
+| LED-Base-16384 | Longformer Enc-Dec | 8,192 | 161M | Long-context baseline |
+| **LED-FaCT (Ours)** | Longformer + SAE + FGCA + CFL | **8,192** | **~170M** | **Faithful long-context** |
 
 ### Evaluation Metrics
 
@@ -204,7 +205,7 @@ python src/run_experiments.py --mode full --dataset arxiv --max_samples 1000
 | E1 | Multi-model comparison | Model architecture | ROUGE + factuality |
 | E2 | Module ablation | SAE / FGCA / CFL | Per-module contribution |
 | E3 | Hallucination analysis | Model type | Hallucination rate & typology |
-| E4 | Context length ablation | Input length (512→16,384) | ROUGE decay curve |
+| E4 | Context length ablation | Input length (512→8,192) | ROUGE decay curve |
 | E5 | Parameter sensitivity | Beam size, α, hidden dim, LR, etc. | Robustness |
 
 ---
@@ -221,7 +222,7 @@ python src/train.py --model led-base-16384 --dataset arxiv --epochs 3 --max_samp
 python src/run_experiments.py --mode ablation --ablation_type led_fact_full
 
 # Multi-context training
-python src/train.py --model led-base-16384 --context_lengths "1024,4096,16384"
+python src/train.py --model led-base-16384 --context_lengths "1024,4096,8192"
 ```
 
 ### Evaluation
@@ -232,7 +233,7 @@ python src/evaluate.py --model led-base-16384 --dataset arxiv --num_test 100
 
 # Context-length sweep
 python src/evaluate.py --model led-base-16384 \
-    --context_lengths "512,1024,2048,4096,8192,16384"
+    --context_lengths "512,1024,2048,4096,8192"
 ```
 
 ### Module Ablation
@@ -282,11 +283,10 @@ end/
 |:---|:---:|:---:|:---|
 | BART-Large | ~8 GB | ~4 GB | 25–50 min |
 | PEGASUS | ~10 GB | ~5 GB | 35–60 min |
-| LED-Base (4096) | ~12 GB | ~6 GB | 50–70 min |
-| LED-Base (16384) | ~16 GB | ~8 GB | 1.5–2.5 h |
-| LED-FaCT (Full) | ~18 GB | ~10 GB | 2–3.5 h |
+| LED-Base (8192) | ~12 GB | ~6 GB | 1–1.5 h |
+| LED-FaCT (Full, 8192) | ~14 GB | ~7 GB | 2–3 h |
 
-> **Tip**: Set `--max_samples 500` to reduce training time by 80% with minor quality loss. Use `gradient_checkpointing=True` for GPUs with <16 GB VRAM.
+> **Tip**: Set `--max_samples 500` to reduce training time by 80% with minor quality loss. Use `gradient_checkpointing=True` for GPUs with <10 GB VRAM.
 
 ---
 
@@ -296,17 +296,16 @@ end/
 
 ```
 ROUGE-L F1
-  0.30 ┤                          ╭────── LED-16384 / LED-FaCT
-        │                    ╭─────╯
-  0.25 ┤              ╭─────╯
-        │        ╭─────╯
-  0.20 ┤  ╭─────╯
-        │──╯
-  0.15 ┤  BART / PEGASUS (truncated to 1024)
+  0.30 ┤                    ╭────── LED-FaCT
+        │              ╭─────╯
+  0.25 ┤        ╭─────╯
+        │  ╭─────╯
+  0.20 ┤──╯
+        │  BART / PEGASUS (truncated to 1024)
         │
-        └──┬─────┬─────┬─────┬─────┬─────┬─────┬──
-           512  1024  2048  4096  8192 12288 16384
-                        Input Context Length
+        └──┬─────┬─────┬─────┬─────┬─────┬──
+           512  1024  2048  4096  8192
+                        Input Context Length (default=8192)
 ```
 
 ### Key Findings (Expected)

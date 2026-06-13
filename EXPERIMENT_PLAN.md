@@ -68,7 +68,7 @@ input_emb = word_emb + pos_emb + section_emb
               ▼
 ┌─────────────────────────────┐
 │   LED Encoder               │  ← Longformer滑动窗口注意力
-│   (12 layers, max 16384)    │
+│   (12 layers, max 8192)     │
 └─────────────┬───────────────┘
               │ encoder_hidden_states
               ▼
@@ -119,8 +119,8 @@ input_emb = word_emb + pos_emb + section_emb
 |------|-----------|--------|------|
 | BART-Large-CNN | 1024 | 400M | 短上下文基线 |
 | PEGASUS-arXiv | 1024 | 568M | 摘要专用基线 |
-| LED-Base-16384 | 16384 | 161M | 长上下文基线（我们的骨架） |
-| **LED-FaCT (Ours)** | **16384** | **~170M** | **LED + SAE + FGCA + CFL** |
+| LED-Base-16384 | 8192 | 161M | 长上下文基线（我们的骨架） |
+| **LED-FaCT (Ours)** | **8192** | **~170M** | **LED + SAE + FGCA + CFL** |
 
 **评估指标**: ROUGE-1/2/L + ROUGE-Lsum + BERTScore + METEOR + 事实性全套指标
 
@@ -148,7 +148,7 @@ input_emb = word_emb + pos_emb + section_emb
 
 ### 实验4: 上下文长度影响
 
-LED-FaCT在不同输入长度下的表现: 512, 1024, 2048, 4096, 8192, 16384 tokens
+LED-FaCT在不同输入长度下的表现: 512, 1024, 2048, 4096, 8192 tokens
 
 ### 实验5: 参数敏感性分析
 
@@ -197,7 +197,8 @@ LED-FaCT在不同输入长度下的表现: 512, 1024, 2048, 4096, 8192, 16384 to
 ## 运行方式
 
 ```bash
-pip install -r requirements.txt
+# 安装依赖（国内用户使用清华镜像源加速）
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 实验1: 多模型对比
 python src/run_experiments.py --mode exp1 --dataset arxiv --max_samples 1000
@@ -304,6 +305,6 @@ end/
 |------|-----------|-----------|-------------|
 | BART-Large-CNN | ~8GB | ~4GB | 25-50min |
 | PEGASUS-arXiv | ~10GB | ~5GB | 35-60min |
-| LED-Base-16384 | ~16GB | ~8GB | 1.5-2.5h |
-| LED-FaCT (Full) | ~16GB | ~9GB | 2-3h |
-| LED-FaCT (各消融) | ~14-16GB | ~7-9GB | 各1.5-3h |
+| LED-Base-16384 | ~12GB | ~6GB | 1-1.5h |
+| LED-FaCT (Full) | ~14GB | ~7GB | 2-3h |
+| LED-FaCT (各消融) | ~12-14GB | ~6-7GB | 各1.5-2.5h |

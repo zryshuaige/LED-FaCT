@@ -6,7 +6,7 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YOUR_REPO/blob/main/notebooks/run.ipynb)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.6+-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![Transformers](https://img.shields.io/badge/🤗%20Transformers-4.40+-FFD21E)](https://huggingface.co/docs/transformers)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
@@ -133,10 +133,11 @@ L_total = L_ce + α · L_cfl    (α = 0.1)
 
 ```bash
 git clone <repo-url> && cd end
-pip install -r requirements.txt
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 或不使用镜像：pip install -r requirements.txt
 ```
 
-> **硬件要求**：推荐单卡 GPU ≥16 GB 显存。LED-16384 全上下文训练约需 16 GB 显存。显存不足时可减少 `--max_samples` 或上下文长度。
+> **硬件要求**：推荐单卡 GPU ≥12 GB 显存（上下文长度 8192）。LED 在 8192 上下文下约需 14 GB 显存（batch_size=1 + gradient_checkpointing）。建议设置 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 减少显存碎片。
 
 国内用户如遇 HuggingFace 下载问题，代码已内置镜像源（`hf-mirror.com`），无需手动配置。
 
@@ -174,8 +175,8 @@ python src/run_experiments.py --mode full --dataset arxiv --max_samples 1000
 |:---|:---:|:---:|:---:|:---|
 | BART-Large-CNN | Encoder-Decoder | 1,024 | 400M | 短上下文基线 |
 | PEGASUS-arXiv | Encoder-Decoder | 1,024 | 568M | 领域微调基线 |
-| LED-Base-16384 | Longformer Enc-Dec | 16,384 | 161M | 长上下文基线 |
-| **LED-FaCT（本项目）** | Longformer + SAE + FGCA + CFL | **16,384** | **~170M** | **忠实长上下文** |
+| LED-Base-16384 | Longformer Enc-Dec | 8,192 | 161M | 长上下文基线 |
+| **LED-FaCT（本项目）** | Longformer + SAE + FGCA + CFL | **8,192** | **~170M** | **忠实长上下文** |
 
 ### 评估指标
 
@@ -192,7 +193,7 @@ python src/run_experiments.py --mode full --dataset arxiv --max_samples 1000
 | E1 | 多模型对比 | 模型架构 | ROUGE + 事实性 |
 | E2 | 模块消融 | SAE / FGCA / CFL | 各模块独立贡献 |
 | E3 | 幻觉深度分析 | 模型类型 | 幻觉率与类型分布 |
-| E4 | 上下文长度消融 | 输入长度（512→16384） | ROUGE 衰减曲线 |
+| E4 | 上下文长度消融 | 输入长度（512→8192） | ROUGE 衰减曲线 |
 | E5 | 参数敏感性 | beam size、α、隐层维度、LR 等 | 鲁棒性 |
 
 ---
@@ -209,7 +210,7 @@ python src/train.py --model led-base-16384 --dataset arxiv --epochs 3 --max_samp
 python src/run_experiments.py --mode ablation --ablation_type led_fact_full
 
 # 多上下文长度训练
-python src/train.py --model led-base-16384 --context_lengths "1024,4096,16384"
+python src/train.py --model led-base-16384 --context_lengths "1024,4096,8192"
 ```
 
 ### 评估
@@ -220,7 +221,7 @@ python src/evaluate.py --model led-base-16384 --dataset arxiv --num_test 100
 
 # 上下文长度扫描
 python src/evaluate.py --model led-base-16384 \
-    --context_lengths "512,1024,2048,4096,8192,16384"
+    --context_lengths "512,1024,2048,4096,8192"
 ```
 
 ### 模块消融
@@ -271,9 +272,8 @@ end/
 |:---|:---:|:---:|:---|
 | BART-Large | ~8 GB | ~4 GB | 25–50 分钟 |
 | PEGASUS | ~10 GB | ~5 GB | 35–60 分钟 |
-| LED-Base (4096) | ~12 GB | ~6 GB | 50–70 分钟 |
-| LED-Base (16384) | ~16 GB | ~8 GB | 1.5–2.5 小时 |
-| LED-FaCT（完整） | ~18 GB | ~10 GB | 2–3.5 小时 |
+| LED-Base (8192) | ~12 GB | ~6 GB | 1–1.5 小时 |
+| LED-FaCT（完整, 8192） | ~14 GB | ~7 GB | 2–3 小时 |
 
 > **提示**：设置 `--max_samples 500` 可减少约 80% 训练时间，质量损失轻微。显存不足时使用 `gradient_checkpointing=True`。
 
@@ -285,17 +285,16 @@ end/
 
 ```
 ROUGE-L F1
-  0.30 ┤                          ╭────── LED-16384 / LED-FaCT
-        │                    ╭─────╯
-  0.25 ┤              ╭─────╯
-        │        ╭─────╯
-  0.20 ┤  ╭─────╯
-        │──╯
-  0.15 ┤  BART / PEGASUS（截断至1024）
+0.30 ┤                    ╭────── LED-FaCT
+        │              ╭─────╯
+  0.25 ┤        ╭─────╯
+        │  ╭─────╯
+  0.20 ┤──╯
+        │  BART / PEGASUS（截断至1024）
         │
-        └──┬─────┬─────┬─────┬─────┬─────┬─────┬──
-           512  1024  2048  4096  8192 12288 16384
-                       输入上下文长度
+        └──┬─────┬─────┬─────┬─────┬─────┬──
+           512  1024  2048  4096  8192
+                        输入上下文长度（默认=8192）
 ```
 
 ### 预期关键发现

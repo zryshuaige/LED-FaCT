@@ -225,7 +225,7 @@ def prepare_dataset_for_model(
 def prepare_dataset_for_led_fact(
     dataset_name="arxiv",
     tokenizer=None,
-    max_input_length=16384,
+    max_input_length=8192,
     max_target_length=256,
     max_samples=None,
 ):

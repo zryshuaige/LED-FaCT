@@ -1,4 +1,7 @@
-torch>=2.0.0
+# Install: pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# (Remove -i flag if not in China)
+
+torch>=2.6.0
 transformers>=4.35.0
 datasets>=2.14.0
 accelerate>=0.24.0

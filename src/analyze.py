@@ -66,7 +66,7 @@ ABLATION_SHORT_NAMES = {
 
 
 def load_results(results_dir: str, model_name: str, dataset_name: str) -> Optional[Dict]:
-    for ctx_len in [512, 1024, 2048, 4096, 8192, 16384]:
+    for ctx_len in [512, 1024, 2048, 4096, 8192]:
         path = os.path.join(results_dir, f"{model_name}_{dataset_name}_ctx{ctx_len}", "eval_results.json")
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
@@ -383,7 +383,7 @@ if __name__ == "__main__":
 
     all_results = {}
     for model_name in ["bart-large", "bart-large-cnn", "pegasus-arxiv", "led-base-16384", "led-fact-full"]:
-        for ctx in [1024, 16384]:
+        for ctx in [1024, 8192]:
             path = os.path.join(args.results_dir, f"{model_name}_arxiv_ctx{ctx}", "eval_results.json")
             if os.path.exists(path):
                 with open(path, "r", encoding="utf-8") as f:

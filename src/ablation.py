@@ -1,4 +1,8 @@
+import gc
 import os
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import json
 import logging
 from typing import Dict, List
@@ -58,7 +62,7 @@ def run_single_ablation(
     output_dir: str = "./results/ablation",
     epochs: int = 3,
     learning_rate: float = 3e-5,
-    batch_size: int = 2,
+    batch_size: int = 1,
 ):
     if ablation_name not in ABLATION_MODELS:
         raise ValueError(f"Unknown ablation: {ablation_name}. Available: {list(ABLATION_MODELS.keys())}")
@@ -126,7 +130,7 @@ def run_single_ablation(
         learning_rate=learning_rate,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=4,
-        gradient_accumulation_steps=4,
+        gradient_accumulation_steps=8,
         num_train_epochs=epochs,
         warmup_steps=500,
         weight_decay=0.01,
@@ -254,6 +258,10 @@ def run_all_ablations(
             traceback.print_exc()
             all_results[ablation_name] = {"error": str(e)}
 
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     compare_results = {}
     for name, result in all_results.items():
         if isinstance(result, dict) and "error" not in result:
@@ -305,7 +313,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_test", type=int, default=100)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--lr", type=float, default=3e-5)
-    parser.add_argument("--batch_size", type=int, default=2)
+    parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--output_dir", type=str, default="./results/ablation")
 
     args = parser.parse_args()

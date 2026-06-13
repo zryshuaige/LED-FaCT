@@ -55,8 +55,8 @@ def run_experiment_1_model_comparison(
         logger.info(f"\n--- Training {model_name} ---")
         model_config = get_model_config(model_name)
         use_grad_ckpt = model_config.is_led or model_config.is_led_fact
-        batch_size = 1 if (model_config.is_led or model_config.is_led_fact) else 2
-        grad_accum = 8 if (model_config.is_led or model_config.is_led_fact) else 4
+        batch_size = 2 if (model_config.is_led or model_config.is_led_fact) else 2
+        grad_accum = 4 if (model_config.is_led or model_config.is_led_fact) else 4
         try:
             trainer, model, tokenizer = train_model(
                 model_name=model_name,

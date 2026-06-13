@@ -62,7 +62,7 @@ def run_single_ablation(
     output_dir: str = "./results/ablation",
     epochs: int = 3,
     learning_rate: float = 3e-5,
-    batch_size: int = 1,
+    batch_size: int = 2,
 ):
     if ablation_name not in ABLATION_MODELS:
         raise ValueError(f"Unknown ablation: {ablation_name}. Available: {list(ABLATION_MODELS.keys())}")
@@ -130,7 +130,7 @@ def run_single_ablation(
         learning_rate=learning_rate,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=4,
-        gradient_accumulation_steps=8,
+        gradient_accumulation_steps=4,
         num_train_epochs=epochs,
         warmup_steps=500,
         weight_decay=0.01,
@@ -313,7 +313,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_test", type=int, default=100)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--lr", type=float, default=3e-5)
-    parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--batch_size", type=int, default=2)
     parser.add_argument("--output_dir", type=str, default="./results/ablation")
 
     args = parser.parse_args()

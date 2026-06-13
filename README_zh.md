@@ -137,7 +137,7 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 # 或不使用镜像：pip install -r requirements.txt
 ```
 
-> **硬件要求**：推荐单卡 GPU ≥12 GB 显存（上下文长度 8192）。LED 在 8192 上下文下约需 14 GB 显存（batch_size=1 + gradient_checkpointing）。建议设置 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 减少显存碎片。
+> **硬件要求**：推荐单卡 GPU ≥20 GB 显存（上下文长度 8192）。LED 在 8192 上下文下约需 18-20 GB 显存（batch_size=2 + gradient_checkpointing）。建议设置 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 减少显存碎片。
 
 国内用户如遇 HuggingFace 下载问题，代码已内置镜像源（`hf-mirror.com`），无需手动配置。
 
@@ -272,10 +272,10 @@ end/
 |:---|:---:|:---:|:---|
 | BART-Large | ~8 GB | ~4 GB | 25–50 分钟 |
 | PEGASUS | ~10 GB | ~5 GB | 35–60 分钟 |
-| LED-Base (8192) | ~12 GB | ~6 GB | 1–1.5 小时 |
-| LED-FaCT（完整, 8192） | ~14 GB | ~7 GB | 2–3 小时 |
+| LED-Base (8192) | ~18 GB | ~6 GB | 1–1.5 小时 |
+| LED-FaCT（完整, 8192） | ~20 GB | ~7 GB | 1.5–2.5 小时 |
 
-> **提示**：设置 `--max_samples 500` 可减少约 80% 训练时间，质量损失轻微。显存不足时使用 `gradient_checkpointing=True`。
+> **提示**：设置 `--max_samples 500` 可减少约 80% 训练时间，质量损失轻微。显存不足时使用 `gradient_checkpointing=True` 或降低 `batch_size=1`。
 
 ---
 

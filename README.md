@@ -151,7 +151,7 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 # or without mirror: pip install -r requirements.txt
 ```
 
-> **Hardware**: Single GPU ≥12 GB VRAM recommended (with context length 8192). LED requires ~14 GB at 8192 context (batch_size=1 + gradient_checkpointing). Set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` to reduce memory fragmentation.
+> **Hardware**: Single GPU ≥12 GB VRAM recommended (with context length 8192). LED requires ~18-20 GB at 8192 context (batch_size=2 + gradient_checkpointing). Set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` to reduce memory fragmentation.
 
 ### Smoke Test (30 seconds)
 
@@ -283,10 +283,10 @@ end/
 |:---|:---:|:---:|:---|
 | BART-Large | ~8 GB | ~4 GB | 25–50 min |
 | PEGASUS | ~10 GB | ~5 GB | 35–60 min |
-| LED-Base (8192) | ~12 GB | ~6 GB | 1–1.5 h |
-| LED-FaCT (Full, 8192) | ~14 GB | ~7 GB | 2–3 h |
+| LED-Base (8192) | ~18 GB | ~6 GB | 1–1.5 h |
+| LED-FaCT (Full, 8192) | ~20 GB | ~7 GB | 1.5–2.5 h |
 
-> **Tip**: Set `--max_samples 500` to reduce training time by 80% with minor quality loss. Use `gradient_checkpointing=True` for GPUs with <10 GB VRAM.
+> **Tip**: Set `--max_samples 500` to reduce training time by 80% with minor quality loss. Use `gradient_checkpointing=True` for GPUs with <20 GB VRAM.
 
 ---
 

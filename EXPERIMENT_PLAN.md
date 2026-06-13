@@ -305,6 +305,6 @@ end/
 |------|-----------|-----------|-------------|
 | BART-Large-CNN | ~8GB | ~4GB | 25-50min |
 | PEGASUS-arXiv | ~10GB | ~5GB | 35-60min |
-| LED-Base-16384 | ~12GB | ~6GB | 1-1.5h |
-| LED-FaCT (Full) | ~14GB | ~7GB | 2-3h |
-| LED-FaCT (各消融) | ~12-14GB | ~6-7GB | 各1.5-2.5h |
+| LED-Base-16384 | ~18GB | ~6GB | 1-1.5h |
+| LED-FaCT (Full) | ~20GB | ~7GB | 1.5-2.5h |
+| LED-FaCT (各消融) | ~16-20GB | ~6-7GB | 各1-2h |

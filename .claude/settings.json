@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python -c \"import json; nb = json.load\\(open\\('notebooks/run.ipynb', 'r', encoding='utf-8'\\)\\); print\\('cells:', len\\(nb['cells']\\)\\); print\\('first cell type:', nb['cells'][0]['cell_type'] if nb['cells'] else 'none'\\); [print\\(i, c['cell_type'], \\(c.get\\('source', ['']\\)[0] if c.get\\('source'\\) else ''\\)[:80]\\) for i, c in enumerate\\(nb['cells'][:6]\\)]\")",
-      "Bash(venv/Scripts/python.exe -c ' *)"
+      "Bash(venv/Scripts/python.exe -c ' *)",
+      "Bash(venv/Scripts/python.exe)"
     ]
   }
 }

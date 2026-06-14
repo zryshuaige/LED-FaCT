@@ -2,7 +2,7 @@
 # (Remove -i flag if not in China)
 #
 # Core
-torch>=2.0.0
+torch>=2.1.0,<2.4
 transformers>=4.35.0
 datasets>=2.14.0
 accelerate>=0.24.0,<0.28

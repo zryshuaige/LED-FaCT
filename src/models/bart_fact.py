@@ -1,5 +1,6 @@
 import copy
 import json
+import math
 from typing import Optional, List, Dict, Tuple, Union
 from dataclasses import dataclass, field, asdict
 
@@ -251,9 +252,10 @@ class BARTFaCTForConditionalGeneration(nn.Module):
                 raise ValueError("input_ids is required when HSE is enabled")
 
             # Word embeddings (BART applies embed_scale)
+            embed_scale = math.sqrt(self.bart_config.d_model) if self.bart_config.scale_embedding else 1.0
             input_embeds = (
                 self.bart.model.encoder.embed_tokens(input_ids)
-                * self.bart.model.encoder.embed_scale
+                * embed_scale
             )
 
             # Prepare boundary mask for sentence detection
@@ -350,9 +352,10 @@ class BARTFaCTForConditionalGeneration(nn.Module):
             embed_grad_orig = self.bart.model.encoder.embed_tokens.weight.requires_grad
             self.bart.model.encoder.embed_tokens.requires_grad_(True)
 
+            embed_scale = math.sqrt(self.bart_config.d_model) if self.bart_config.scale_embedding else 1.0
             input_embeds = (
                 self.bart.model.encoder.embed_tokens(input_ids)
-                * self.bart.model.encoder.embed_scale
+                * embed_scale
             )
 
             if boundary_mask is None:

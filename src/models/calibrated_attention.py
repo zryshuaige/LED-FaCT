@@ -120,9 +120,13 @@ class FaithfulnessCalibrator(nn.Module):
 class CalibratedDecoderLayer(nn.Module):
     """Wraps a BART decoder layer with CFA calibration.
 
-    After the original layer processes hidden states (self-attn → cross-attn → FFN),
-    CFA computes calibration scores and blends the cross-attention output with
-    self-attention based on estimated faithfulness uncertainty.
+    Runs the original decoder layer normally, but uses forward hooks on
+    self_attn_layer_norm and encoder_attn_layer_norm to capture the pure
+    self-attention and cross-attention signals *after* their respective
+    residual-add and layer-norm steps.  The calibrator then receives
+    meaningful inputs (not the pre-layer raw hidden states nor the
+    post-FFN full output) and its gated blend is residual-mixed into
+    the final decoder output.
     """
 
     def __init__(
@@ -140,6 +144,26 @@ class CalibratedDecoderLayer(nn.Module):
             dropout=dropout,
         )
         self.use_cfa = True
+        self._self_attn_out = None
+        self._cross_attn_out = None
+
+        # ── Forward hooks to capture intermediate activations ──
+        # self_attn_layer_norm runs after: self-attn + residual dropout + add
+        # Its output is the pure self-attention signal.
+        self.original_layer.self_attn_layer_norm.register_forward_hook(
+            self._capture_self_attn
+        )
+        # encoder_attn_layer_norm runs after: cross-attn + residual dropout + add
+        # Its output is the pure cross-attention signal.
+        self.original_layer.encoder_attn_layer_norm.register_forward_hook(
+            self._capture_cross_attn
+        )
+
+    def _capture_self_attn(self, _module, _input, output):
+        self._self_attn_out = output
+
+    def _capture_cross_attn(self, _module, _input, output):
+        self._cross_attn_out = output
 
     def forward(
         self,
@@ -149,11 +173,12 @@ class CalibratedDecoderLayer(nn.Module):
         encoder_attention_mask: Optional[torch.Tensor] = None,
         **kwargs,
     ):
-        # Save self-attention input for calibration
-        self_attn_input = hidden_states
+        # Reset captured activations for this forward pass
+        self._self_attn_out = None
+        self._cross_attn_out = None
 
-        # Run the original decoder layer
-        layer_outputs = self.original_layer(
+        # Run the full original decoder layer
+        outputs = self.original_layer(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             encoder_hidden_states=encoder_hidden_states,
@@ -161,28 +186,24 @@ class CalibratedDecoderLayer(nn.Module):
             **kwargs,
         )
 
-        if isinstance(layer_outputs, tuple):
-            decoder_output = layer_outputs[0]
-        else:
-            decoder_output = layer_outputs
-
         # CFA disabled or no encoder states → passthrough
         if not self.use_cfa or encoder_hidden_states is None:
-            return layer_outputs
+            return outputs
 
-        # ── Apply CFA calibration ──
-        # decoder_output contains both self-attn and cross-attn contributions
-        # self_attn_input represents the pure self-attention path
-        calibrated_output, uncertainty = self.calibrator(
-            cross_attn_output=decoder_output,
-            self_attn_output=self_attn_input,
+        decoder_output = outputs[0] if isinstance(outputs, tuple) else outputs
+
+        # Fall back to the decoder output if hooks failed to capture (edge case)
+        self_attn_signal = self._self_attn_out if self._self_attn_out is not None else decoder_output
+        cross_attn_signal = self._cross_attn_out if self._cross_attn_out is not None else decoder_output
+
+        calibrated_output, _ = self.calibrator(
+            cross_attn_output=cross_attn_signal,
+            self_attn_output=self_attn_signal,
         )
 
-        # Residual blend: 0.5 * original + 0.5 * calibrated
-        # This ensures training stability while allowing calibration to take effect
-        hybrid_output = 0.5 * decoder_output + 0.5 * calibrated_output
+        # 0.5/0.5 residual blend for training stability
+        blended = 0.5 * decoder_output + 0.5 * calibrated_output
 
-        if isinstance(layer_outputs, tuple):
-            return (hybrid_output,) + layer_outputs[1:]
-        else:
-            return hybrid_output
+        if isinstance(outputs, tuple):
+            return (blended,) + outputs[1:]
+        return blended

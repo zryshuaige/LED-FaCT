@@ -316,9 +316,11 @@ def train_model(
             max_samples=max_samples,
         )
 
-    output_dir = os.path.join(
-        training_config.output_dir,
-        f"{model_name}_{dataset_name}_ctx{model_config.max_input_length}",
+    output_dir = os.path.normpath(
+        os.path.join(
+            training_config.output_dir,
+            f"{model_name}_{dataset_name}_ctx{model_config.max_input_length}",
+        )
     )
     os.makedirs(output_dir, exist_ok=True)
 
@@ -374,6 +376,28 @@ def train_model(
 
     # Build kwargs dict first so we can auto-detect eval_strategy vs evaluation_strategy
     eval_strategy_val = "steps" if "validation" in dataset else "no"
+    has_validation = "validation" in dataset
+    _eval_steps = max(training_config.eval_steps, 1) if has_validation else None
+    _save_steps = training_config.save_steps
+    _load_best = has_validation
+
+    # Transformers (>=4.35-ish) requires save_steps to be a round multiple of
+    # eval_steps when load_best_model_at_end=True.  Tweak to satisfy the check.
+    if _load_best and _eval_steps is not None:
+        if _save_steps < _eval_steps:
+            _save_steps = _eval_steps
+        elif _save_steps % _eval_steps != 0:
+            _save_steps = ((_save_steps // _eval_steps) + 1) * _eval_steps
+
+    # TensorBoard on Windows fails when the output path contains non-ASCII
+    # characters (e.g. Chinese).  Fall back gracefully.
+    _report_to = ["tensorboard"]
+    try:
+        output_dir.encode("ascii")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        _report_to = []
+        logger.info("Output path contains non-ASCII chars; TensorBoard disabled")
+
     training_kwargs = dict(
         output_dir=output_dir,
         learning_rate=training_config.learning_rate,
@@ -388,14 +412,14 @@ def train_model(
         fp16=training_config.fp16 and get_device().type == "cuda",
         gradient_checkpointing=training_config.gradient_checkpointing,
         logging_steps=training_config.logging_steps,
-        eval_steps=max(training_config.eval_steps, 1) if "validation" in dataset else None,
-        save_steps=training_config.save_steps,
+        eval_steps=_eval_steps,
+        save_steps=_save_steps,
         save_total_limit=training_config.save_total_limit,
         predict_with_generate=True,
         generation_max_length=model_config.max_target_length,
-        report_to=["tensorboard"],
-        load_best_model_at_end=True if "validation" in dataset else False,
-        metric_for_best_model="eval_loss" if "validation" in dataset else None,
+        report_to=_report_to,
+        load_best_model_at_end=_load_best,
+        metric_for_best_model="eval_loss" if has_validation else None,
         seed=training_config.seed,
         remove_unused_columns=False if is_bart_fact else True,
         dataloader_num_workers=0 if get_device().type == "cpu" else 2,

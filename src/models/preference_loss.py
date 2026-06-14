@@ -199,9 +199,10 @@ def generate_context_free_summary(
     else:
         bart = model
 
-    with torch.no_grad():
-        model.eval()
+    was_training = model.training
+    model.eval()
 
+    try:
         # Create a dummy encoder output: zero hidden states
         # This forces cross-attention to attend to nothing meaningful,
         # so the decoder relies entirely on its own language model prior
@@ -214,7 +215,7 @@ def generate_context_free_summary(
             last_hidden_state=dummy_encoder_hidden
         )
 
-        try:
+        with torch.no_grad():
             outputs = bart.generate(
                 encoder_outputs=dummy_encoder_outputs,
                 decoder_input_ids=decoder_input_ids,
@@ -227,8 +228,12 @@ def generate_context_free_summary(
                 eos_token_id=tokenizer.eos_token_id,
                 use_cache=True,
             )
-        except Exception:
-            # Fallback: repeat BOS (should not happen with dummy encoder)
+    except Exception:
+        # Fallback: repeat BOS (should not happen with dummy encoder)
+        with torch.no_grad():
             outputs = decoder_input_ids.repeat(1, num_tokens)
+    finally:
+        if was_training:
+            model.train()
 
     return outputs

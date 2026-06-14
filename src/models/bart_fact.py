@@ -47,6 +47,7 @@ class BARTFaCTConfig:
     base_model_name: str = "facebook/bart-large-cnn"
     max_input_length: int = 1024
     max_target_length: int = 256
+    is_encoder_decoder: bool = True  # Required by Trainer internals
 
     @property
     def config_name(self):
@@ -172,6 +173,18 @@ class BARTFaCTForConditionalGeneration(nn.Module):
     @property
     def device(self):
         return next(self.parameters()).device
+
+    @property
+    def num_parameters(self):
+        """Passthrough for Trainer internals that access model.num_parameters."""
+        return sum(p.numel() for p in self.parameters())
+
+    def prepare_decoder_input_ids_from_labels(self, labels):
+        """Passthrough for Trainer predict_with_generate path."""
+        return self.bart.prepare_decoder_input_ids_from_labels(labels)
+
+    def can_generate(self) -> bool:
+        return True
 
     def gradient_checkpointing_enable(self, gck_kwargs=None):
         self.bart.gradient_checkpointing_enable(gck_kwargs)
@@ -330,7 +343,8 @@ class BARTFaCTForConditionalGeneration(nn.Module):
     ):
         was_training = self.training
         self.eval()
-        generate_kwargs.setdefault("use_cache", False)
+        if self.use_hse:
+            generate_kwargs.setdefault("use_cache", False)
 
         if self.use_hse:
             embed_grad_orig = self.bart.model.encoder.embed_tokens.weight.requires_grad
@@ -431,7 +445,9 @@ class BARTFaCTForConditionalGeneration(nn.Module):
 
         try:
             bart_path = os.path.join(save_directory, "bart_base")
-            self.bart.save_pretrained(bart_path, safe_serialization=False)
+            # safetensors avoids the "unexpected pos" pickle error that
+            # occurs when decoder layers are swapped in-place during save.
+            self.bart.save_pretrained(bart_path, safe_serialization=True)
             self.tokenizer.save_pretrained(bart_path)
         finally:
             if self.use_cfa:
@@ -531,7 +547,11 @@ class BARTFaCTForConditionalGeneration(nn.Module):
                 p.numel() for p in self.cpo_loss.parameters()
             )
 
-        module_params["bart_base"] = sum(
-            p.numel() for p in self.bart.parameters()
-        )
+        # Avoid double-counting: CFA calibrator weights are in self.bart.parameters()
+        # because CalibratedDecoderLayer is injected into bart's decoder layers.
+        bart_total = sum(p.numel() for p in self.bart.parameters())
+        if self.use_cfa:
+            module_params["bart_base"] = bart_total - module_params.get("cfa", 0)
+        else:
+            module_params["bart_base"] = bart_total
         return module_params
